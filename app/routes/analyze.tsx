@@ -10,13 +10,13 @@ import {
 } from "../../constants";
 
 const Analyze = () => {
-    const { fs, ai, kv } = usePuterStore();
+    const { fs, kv } = usePuterStore();
+
     const navigate = useNavigate();
     const location = useLocation();
 
-    const [statusText, setStatusText] = React.useState(
-        "Starting analysis..."
-    );
+    const [statusText, setStatusText] =
+        React.useState("Starting analysis...");
 
     const state = location.state as {
         companyName: string;
@@ -34,71 +34,292 @@ const Analyze = () => {
         analyzeResume();
     }, []);
 
+    const analyzeWithGemini = async (
+        file: File,
+        instructions: string
+    ): Promise<string> => {
+        const apiKey =
+            import.meta.env.VITE_GEMINI_API_KEY;
+
+        if (!apiKey) {
+            throw new Error(
+                "Gemini API key is missing. Check your .env file."
+            );
+        }
+
+        const arrayBuffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+
+        let binary = "";
+        const chunkSize = 0x8000;
+
+        for (
+            let i = 0;
+            i < bytes.length;
+            i += chunkSize
+        ) {
+            const chunk = bytes.subarray(
+                i,
+                Math.min(
+                    i + chunkSize,
+                    bytes.length
+                )
+            );
+
+            binary += String.fromCharCode(...chunk);
+        }
+
+        const base64Pdf = btoa(binary);
+
+        const response = await fetch(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "x-goog-api-key": apiKey,
+                },
+                body: JSON.stringify({
+                    contents: [
+                        {
+                            role: "user",
+                            parts: [
+                                {
+                                    inlineData: {
+                                        mimeType: "application/pdf",
+                                        data: base64Pdf,
+                                    },
+                                },
+                                {
+                                    text: `
+You are an expert ATS resume analyzer.
+
+Analyze the uploaded resume carefully.
+
+${instructions}
+
+IMPORTANT RULES:
+
+1. Return ONLY valid JSON.
+2. Do not use Markdown.
+3. Do not use code fences.
+4. Do not add explanations before the JSON.
+5. Do not add explanations after the JSON.
+6. Follow the requested JSON structure exactly.
+`,
+                                },
+                            ],
+                        },
+                    ],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                    },
+                }),
+            }
+        );
+
+        const result = await response.json();
+
+        console.log(
+            "Gemini response:",
+            result
+        );
+
+        if (!response.ok) {
+            console.error(
+                "Gemini API error:",
+                result
+            );
+
+            throw new Error(
+                result?.error?.message ||
+                `Gemini API request failed with status ${response.status}`
+            );
+        }
+
+        const text =
+            result?.candidates?.[0]
+                ?.content?.parts?.[0]?.text;
+
+        if (!text) {
+            throw new Error(
+                "Gemini returned an empty response."
+            );
+        }
+
+        return text;
+    };
+
+    const parseAIResponse = (
+        responseText: string
+    ) => {
+        try {
+            let cleaned =
+                responseText.trim();
+
+            console.log(
+                "Original Gemini response:",
+                cleaned
+            );
+
+            cleaned = cleaned
+                .replace(
+                    /^```json\s*/i,
+                    ""
+                )
+                .replace(
+                    /^```\s*/i,
+                    ""
+                )
+                .replace(
+                    /\s*```$/i,
+                    ""
+                )
+                .trim();
+
+            const firstBrace =
+                cleaned.indexOf("{");
+
+            const lastBrace =
+                cleaned.lastIndexOf("}");
+
+            if (
+                firstBrace === -1 ||
+                lastBrace === -1 ||
+                lastBrace <= firstBrace
+            ) {
+                throw new Error(
+                    "No valid JSON object found."
+                );
+            }
+
+            cleaned =
+                cleaned.substring(
+                    firstBrace,
+                    lastBrace + 1
+                );
+
+            console.log(
+                "Cleaned Gemini response:",
+                cleaned
+            );
+
+            const parsed =
+                JSON.parse(cleaned);
+
+            if (
+                !parsed ||
+                typeof parsed !== "object"
+            ) {
+                throw new Error(
+                    "Gemini returned an invalid JSON object."
+                );
+            }
+
+            return parsed;
+        } catch (error) {
+            console.error(
+                "JSON PARSE ERROR:",
+                error
+            );
+
+            console.error(
+                "RAW GEMINI RESPONSE:",
+                responseText
+            );
+
+            throw new Error(
+                "Gemini returned invalid JSON."
+            );
+        }
+    };
+
     const analyzeResume = async () => {
-        if (!state?.file) return;
+        if (!state?.file) {
+            return;
+        }
 
         try {
-            const uuid = generateUUID();
+            const uuid =
+                generateUUID();
 
-            // ==========================================
-            // 1. Validate Resume
-            // ==========================================
-
-            if (!(state.file instanceof File)) {
-                throw new Error("Invalid resume file.");
+            if (
+                !(state.file instanceof File)
+            ) {
+                throw new Error(
+                    "Invalid resume file."
+                );
             }
 
-            if (state.file.type !== "application/pdf") {
-                throw new Error("Please upload a PDF resume.");
+            if (
+                state.file.type !==
+                "application/pdf"
+            ) {
+                throw new Error(
+                    "Please upload a PDF resume."
+                );
             }
 
-            if (state.file.size === 0) {
-                throw new Error("The uploaded PDF is empty.");
+            if (
+                state.file.size === 0
+            ) {
+                throw new Error(
+                    "The uploaded PDF is empty."
+                );
             }
 
-            console.log("FILE:", state.file);
-            console.log("FILE NAME:", state.file.name);
-            console.log("FILE TYPE:", state.file.type);
-            console.log("FILE SIZE:", state.file.size);
-
-            // ==========================================
-            // 2. Upload Resume
-            // ==========================================
-
-            setStatusText("Uploading resume...");
-
-            // Give the uploaded file a unique name
-            const resumeFile = new File(
-                [state.file],
-                `resume-${uuid}.pdf`,
-                {
-                    type: "application/pdf",
-                }
+            console.log(
+                "FILE:",
+                state.file
             );
 
-            const uploadedResume = await fs.upload(
-                [resumeFile],
-                undefined,
-                {
-                    dedupeName: true,
-                    overwrite: false,
-                }
+            console.log(
+                "FILE NAME:",
+                state.file.name
             );
 
-            console.log("Uploaded Resume:", uploadedResume);
+            console.log(
+                "FILE TYPE:",
+                state.file.type
+            );
+
+            console.log(
+                "FILE SIZE:",
+                state.file.size
+            );
+
+            setStatusText(
+                "Uploading resume..."
+            );
+
+            const resumeFile =
+                new File(
+                    [state.file],
+                    `resume-${uuid}.pdf`,
+                    {
+                        type: "application/pdf",
+                    }
+                );
+
+            const uploadedResume =
+                await fs.upload([
+                    resumeFile,
+                ]);
+
+            console.log(
+                "Uploaded Resume:",
+                uploadedResume
+            );
 
             if (!uploadedResume) {
-                throw new Error("Resume upload failed.");
+                throw new Error(
+                    "Resume upload failed."
+                );
             }
 
             if (!uploadedResume.path) {
-                console.error(
-                    "Invalid uploaded resume object:",
-                    uploadedResume
-                );
-
                 throw new Error(
-                    "Resume uploaded, but Puter did not return a valid file path."
+                    "Puter did not return a valid resume path."
                 );
             }
 
@@ -107,69 +328,55 @@ const Analyze = () => {
                 uploadedResume.path
             );
 
-            // ==========================================
-            // 3. Convert PDF to Image
-            // ==========================================
-
             setStatusText(
                 "Converting PDF to image..."
             );
 
             const conversionResult =
-                await convertPdfToImage(state.file);
+                await convertPdfToImage(
+                    state.file
+                );
 
             console.log(
                 "Conversion:",
                 conversionResult
             );
 
-            if (!conversionResult?.file) {
+            if (
+                !conversionResult?.file
+            ) {
                 throw new Error(
                     conversionResult?.error ||
                     "Failed to convert PDF to image."
                 );
             }
 
-            // ==========================================
-            // 4. Give Preview Image a Unique Name
-            // ==========================================
-
             const imageExtension =
-                conversionResult.file.type === "image/png"
+                conversionResult.file
+                    .type === "image/png"
                     ? "png"
                     : "jpg";
 
-            const previewFile = new File(
-                [conversionResult.file],
-                `resume-preview-${uuid}.${imageExtension}`,
-                {
-                    type:
-                        conversionResult.file.type ||
-                        "image/png",
-                }
-            );
-
-            console.log(
-                "Preview File:",
-                previewFile
-            );
-
-            // ==========================================
-            // 5. Upload Preview Image
-            // ==========================================
+            const previewFile =
+                new File(
+                    [conversionResult.file],
+                    `resume-preview-${uuid}.${imageExtension}`,
+                    {
+                        type:
+                            conversionResult.file
+                                .type ||
+                            "image/png",
+                    }
+                );
 
             setStatusText(
                 "Uploading resume preview..."
             );
 
-            const uploadedImage = await fs.upload(
-                [previewFile],
-                undefined,
-                {
-                    dedupeName: true,
-                    overwrite: false,
-                }
-            );
+            const uploadedImage =
+                await fs.upload([
+                    previewFile,
+                ]);
 
             console.log(
                 "Uploaded Image:",
@@ -183,13 +390,8 @@ const Analyze = () => {
             }
 
             if (!uploadedImage.path) {
-                console.error(
-                    "Invalid uploaded image object:",
-                    uploadedImage
-                );
-
                 throw new Error(
-                    "Preview uploaded, but Puter did not return a valid image path."
+                    "Puter did not return a valid image path."
                 );
             }
 
@@ -198,14 +400,12 @@ const Analyze = () => {
                 uploadedImage.path
             );
 
-            // ==========================================
-            // 6. Create Initial Resume Data
-            // ==========================================
-
-            const data = {
+            const data: any = {
                 id: uuid,
-                resumePath: uploadedResume.path,
-                imagePath: uploadedImage.path,
+                resumePath:
+                uploadedResume.path,
+                imagePath:
+                uploadedImage.path,
                 companyName:
                     state.companyName || "",
                 jobTitle:
@@ -214,15 +414,6 @@ const Analyze = () => {
                     state.jobDescription || "",
                 feedback: null,
             };
-
-            console.log(
-                "Initial Resume Data:",
-                data
-            );
-
-            // ==========================================
-            // 7. Save Initial Data
-            // ==========================================
 
             setStatusText(
                 "Preparing resume analysis..."
@@ -233,17 +424,8 @@ const Analyze = () => {
                 JSON.stringify(data)
             );
 
-            // ==========================================
-            // 8. AI Analysis
-            // ==========================================
-
             setStatusText(
-                "Analyzing resume with AI..."
-            );
-
-            console.log(
-                "Sending resume to AI:",
-                uploadedResume.path
+                "Analyzing resume with Gemini AI..."
             );
 
             const instructions =
@@ -256,94 +438,41 @@ const Analyze = () => {
                 });
 
             console.log(
-                "AI Instructions:",
+                "Gemini Instructions:",
                 instructions
             );
 
-            const feedback = await ai.feedback(
-                uploadedResume.path,
-                instructions
-            );
-
-            console.log(
-                "AI Feedback:",
-                feedback
-            );
-
-            if (!feedback) {
-                throw new Error(
-                    "AI failed to analyze the resume."
+            const feedbackText =
+                await analyzeWithGemini(
+                    state.file,
+                    instructions
                 );
-            }
-
-            // ==========================================
-            // 9. Extract AI Response
-            // ==========================================
-
-            let feedbackText = "";
-
-            if (
-                typeof feedback.message?.content ===
-                "string"
-            ) {
-                feedbackText =
-                    feedback.message.content;
-            } else if (
-                Array.isArray(
-                    feedback.message?.content
-                )
-            ) {
-                feedbackText =
-                    feedback.message.content
-                        .map((item: any) =>
-                            typeof item === "string"
-                                ? item
-                                : item?.text || ""
-                        )
-                        .join("");
-            }
 
             console.log(
-                "Raw AI Response:",
+                "Gemini Feedback:",
                 feedbackText
             );
 
-            if (!feedbackText.trim()) {
+            if (
+                !feedbackText.trim()
+            ) {
                 throw new Error(
-                    "AI returned an empty response."
+                    "Gemini returned an empty response."
                 );
             }
 
-            // ==========================================
-            // 10. Parse JSON
-            // ==========================================
-
-            let parsedFeedback;
-
-            try {
-                parsedFeedback =
-                    JSON.parse(feedbackText);
-            } catch (jsonError) {
-                console.error(
-                    "AI JSON PARSE ERROR:",
-                    jsonError
-                );
-
-                console.error(
-                    "AI RAW RESPONSE:",
+            const parsedFeedback =
+                parseAIResponse(
                     feedbackText
                 );
 
-                throw new Error(
-                    "AI returned an invalid JSON response."
-                );
-            }
+            console.log(
+                "Parsed Feedback:",
+                parsedFeedback
+            );
 
-            // ==========================================
-            // 11. Save Final Data
-            // ==========================================
-
-            data.feedback = parsedFeedback;
+            data.feedback =
+                parsedFeedback;
 
             setStatusText(
                 "Finalizing your resume analysis..."
@@ -354,30 +483,46 @@ const Analyze = () => {
                 JSON.stringify(data)
             );
 
-            // ==========================================
-            // 12. Navigate
-            // ==========================================
-
             setStatusText(
                 "Analysis complete!"
             );
 
             console.log(
-                "✅ ANALYSIS COMPLETE:",
+                "ANALYSIS COMPLETE:",
                 data
             );
 
-            navigate(`/resume/${uuid}`);
-
+            navigate(
+                `/resume/${uuid}`
+            );
         } catch (error) {
             console.error(
-                "❌ ANALYSIS ERROR:",
+                "ANALYSIS ERROR:",
                 error
             );
 
-            if (error instanceof Error) {
-                setStatusText(error.message);
+            if (
+                error instanceof Error
+            ) {
+                console.error(
+                    "ERROR MESSAGE:",
+                    error.message
+                );
+
+                console.error(
+                    "ERROR STACK:",
+                    error.stack
+                );
+
+                setStatusText(
+                    error.message
+                );
             } else {
+                console.error(
+                    "UNKNOWN ERROR:",
+                    error
+                );
+
                 setStatusText(
                     "Something went wrong while analyzing your resume."
                 );
@@ -391,7 +536,6 @@ const Analyze = () => {
 
             <section className="main-section">
                 <div className="page-heading py-16 text-center">
-
                     <h1>
                         Analyzing Your Resume
                     </h1>
@@ -407,7 +551,6 @@ const Analyze = () => {
                             className="w-full max-w-2xl animate-slide-up"
                         />
                     </div>
-
                 </div>
             </section>
         </main>
