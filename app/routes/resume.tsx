@@ -1,6 +1,9 @@
 import { Link, type MetaFunction, useParams,useNavigate } from "react-router";
 import { useEffect, useState } from "react";
 import { usePuterStore } from "~/lib/puter";
+import ATS from "~/components/ATS";
+import Details from "~/components/Details";
+import Summary from "~/components/Summary";
 
 export const meta: MetaFunction = () => [
     { title: "Resumind | Review" },
@@ -203,7 +206,7 @@ const Resume = () => {
                     </h2>
                     {feedback ?(
                         <div className="flex flex-col gap-8 animate-in fade-in duration-1000">
-                            <summary feedback ={feedback}/>
+                            <Summary feedback ={feedback}/>
                             <ATS score = {feedback.ATS.score||0} suggestions = {feedback.ATS.tips || []} />
                             <Details feedback ={feedback}/>
                         </div>
