@@ -25,15 +25,19 @@ const Analyze = () => {
         file: File;
     } | null;
 
+    const hasAnalyzed = React.useRef(false);
+
     React.useEffect(() => {
         if (!state?.file) {
             navigate("/upload");
             return;
         }
 
+        if (hasAnalyzed.current) return;
+
+        hasAnalyzed.current = true;
         analyzeResume();
     }, []);
-
     const analyzeWithGemini = async (
         file: File,
         instructions: string

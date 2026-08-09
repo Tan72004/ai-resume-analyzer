@@ -18,7 +18,7 @@ const getResumeImage = (id: string) => {
 
 const ResumeCard =({resume : {id,companyName,jobTitle,feedback, imagePath}}:{resume: Resume}) =>{
     const{fs} = usePuterStore();
-    const [resumeURL,setResumeUrl]= useState('');
+    const [resumeURL, setResumeUrl] = useState<string | null>(null);
     useEffect(() => {
         const loadResume = async () =>{
             const blob = await fs.read(imagePath);
@@ -53,11 +53,13 @@ const ResumeCard =({resume : {id,companyName,jobTitle,feedback, imagePath}}:{res
             </div>
             </div>
             <div className="gradient-border transition-all duration-500 hover:scale-[1.02]">
-                <img
-                    src={resumeURL}
-                    alt="resume"
-                    className="w-full h-[350px] max-sm:h-[200px] object-cover object-top"
-                />
+                {resumeURL && (
+                    <img
+                        src={resumeURL}
+                        alt="resume"
+                        className="w-full h-[350px] max-sm:h-[200px] object-cover object-top"
+                    />
+                )}
             </div>
         </Link>
     );

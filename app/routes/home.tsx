@@ -26,6 +26,9 @@ export default function Home() {
             navigate(`/auth?next=/`);
         }
     }, [auth.isAuthenticated,navigate]);
+
+
+
     useEffect(() => {
         const loadResume = async () =>{
             setLoadingResumes(true);
@@ -34,8 +37,17 @@ export default function Home() {
                 JSON.parse(resume.value) as Resume
             ))
 
-            console.log("parsedResumes", parsedResumes);
-            setResumes(parsedResumes || [] );
+            console.log(
+                "parsedResumes",
+                parsedResumes?.map((resume) => ({
+                    id: resume.id,
+                    companyName: resume.companyName,
+                    jobTitle: resume.jobTitle,
+                    imagePath: resume.imagePath,
+                    resumePath: resume.resumePath,
+                }))
+            );
+            setResumes(parsedResumes || []);
             setLoadingResumes(false);
         }
         loadResume();
