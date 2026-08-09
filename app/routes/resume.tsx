@@ -24,7 +24,9 @@ const Resume = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState("");
     useEffect(() => {
-            if(!auth.isAuthenticated)navigate(`auth?next=/resume/${id}`);
+            if (!auth.isAuthenticated) {
+                navigate(`/auth?next=/resume/${id}`);
+            }
         },
         [auth.isAuthenticated , id,navigate])
 
@@ -60,9 +62,6 @@ const Resume = () => {
                 console.log("Resume path:", data.resumePath);
                 console.log("Image path:", data.imagePath);
 
-                // --------------------------------
-                // LOAD PDF
-                // --------------------------------
 
                 if (data.resumePath) {
                     console.log(
@@ -104,9 +103,7 @@ const Resume = () => {
                     );
                 }
 
-                // --------------------------------
-                // LOAD RESUME IMAGE
-                // --------------------------------
+
 
                 if (data.imagePath) {
                     console.log(
@@ -214,7 +211,7 @@ const Resume = () => {
                         <img src="/images/resume-scan-2.gif" className="w-full"/>
                     )}
                 </section>
-                <section className="feedback-section bg-[url('/images/bg-small.svg)bg-cover h-[100vh] sticky top-0 items-center justify-center h-[80vh]]">
+                <section className="feedback-section bg-[url('/images/bg-small.svg')] bg-cover h-[100vh] sticky top-0 items-center justify-center">
                     {imageURL && resumeURL &&(
                         <div className= "animate-in fade-in duration-1000 gradient-border max-sm:0 h-[90%] max-wxl:h-fit w-fit">
                            <a href={resumeURL} target="_blank" rel="noopener noreferrer">
